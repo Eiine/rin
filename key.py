@@ -1,5 +1,5 @@
 import speech_recognition as sr
-
+import os
 class DetectorPalabraClave:
     def __init__(self, palabra_clave="rin", idioma="es-AR"):
         self.reconocedor = sr.Recognizer()
@@ -9,7 +9,7 @@ class DetectorPalabraClave:
 
     def esperar_activacion(self):
         print(f"📡 Centinela activo: Esperando que digas '{self.palabra_clave}'...")
-        with sr.Microphone() as origen:
+        with sr.Microphone(int(os.getenv("MIC_INDEX", 0))) as origen:
             self.reconocedor.adjust_for_ambient_noise(origen, duration=1)
             while True:
                 try:
