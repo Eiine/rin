@@ -1,8 +1,10 @@
 import requests
+import requests
 
 class WikimediaSearcher:
     """
     Busca imágenes en Wikimedia Commons con filtros estrictos de calidad.
+    Interfaz estandarizada para el Orquestador Rin.
     """
 
     def __init__(self):
@@ -11,12 +13,28 @@ class WikimediaSearcher:
             "User-Agent": "RinAgentSystem/2.0 (Multimedia Module)"
         }
 
-    def ejecutar_busqueda(self, criterio_busqueda: str) -> list:
+    def ejecutar(self, criterio_busqueda: str) -> dict:
+        """
+        Método de interfaz unificada. 
+        Recibe el criterio, ejecuta la búsqueda y devuelve un dict para el orquestador.
+        """
+        resultados = self._realizar_busqueda(criterio_busqueda)
+        
+        if not resultados:
+            return {"error": f"No se encontraron imágenes para: {criterio_busqueda}"}
+
+        # Tomamos el mejor resultado
+        mejor = resultados[0]
+        return {
+            "imagen": mejor['url'],
+            "imagen_titulo": mejor['titulo']
+        }
+
+    def _realizar_busqueda(self, criterio_busqueda: str) -> list:
+        """Lógica interna de consulta a la API."""
         if not criterio_busqueda or not isinstance(criterio_busqueda, str):
             return []
 
-        # Mejoramos el criterio: añadimos negaciones para descartar ruido
-        # El operador '-' excluye resultados que contengan esas palabras
         criterio_estricto = f"{criterio_busqueda} -logo -icon -flag -symbol -emblem -diagram -map -chart"
 
         parametros = {
@@ -25,9 +43,9 @@ class WikimediaSearcher:
             "generator": "search",
             "gsrsearch": criterio_estricto,
             "gsrnamespace": 6,
-            "gsrlimit": 20, # Traemos más para filtrar mejor
+            "gsrlimit": 20,
             "prop": "imageinfo",
-            "iiprop": "url|size|mime", # Solicitamos MIME y tamaño
+            "iiprop": "url|size|mime",
         }
 
         try:
@@ -45,39 +63,30 @@ class WikimediaSearcher:
             for _, info in paginas.items():
                 imageinfo = info.get("imageinfo", [{}])[0]
                 
-                # 1. Filtro de Tamaño: Descartamos imágenes minúsculas (< 300px ancho)
+                # Filtros de calidad
                 if imageinfo.get("width", 0) < 300:
                     continue
 
                 url = imageinfo.get("url", "")
-                titulo = info.get("title", "")
-
-                # 2. Filtro de formato: Priorizamos imágenes reales sobre archivos de audio/pdf
                 mime = imageinfo.get("mime", "")
+                
                 if "image" not in mime:
                     continue
 
                 resultados.append({
-                    "titulo": titulo,
+                    "titulo": info.get("title", ""),
                     "url": url,
                     "es_vector": "svg" in mime
                 })
 
-            # Orden: Priorizamos imágenes reales, dejamos los SVG al final si prefieres píxeles
-            # o los subimos si el visor externo los maneja bien.
             return sorted(resultados, key=lambda x: x['es_vector'])[:10]
 
         except Exception as e:
-            print(f"❌ Error crítico en WikimediaSearcher: {e}")
+            print(f"❌ Error en WikimediaSearcher: {e}")
             return []
 
 if __name__ == "__main__":
+    # Prueba de funcionamiento local
     modulo = WikimediaSearcher()
-    # Prueba con una búsqueda más limpia
-    resultados = modulo.ejecutar_busqueda("Astolfo Fate")
-
-    print(f"\n=== RESULTADOS PARA 'Astolfo Fate' ===\n")
-    for r in resultados:
-        print(f"Titulo: {r['titulo']}")
-        print(f"URL:    {r['url']}")
-        print("-" * 50)
+    resultado = modulo.ejecutar("Astolfo Fate")
+    print(resultado)
