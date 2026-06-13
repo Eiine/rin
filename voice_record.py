@@ -1,27 +1,9 @@
 import threading
 import json
-import requests
-import speech_recognition as sr
-import os
-import time
-
-from view_image import WebImageViewer
-
-# Módulos del sistema
-from key import DetectorPalabraClave
-from voice_text import TranscriptorAudio
-from services_ia import GeminiClient
-from voice_output import RinVoz
-from sidebar import FloatingSidebar
-from services_imagenes import WikimediaSearcher
-from folder_opener import FolderOpener  # <-- NUEVO IMPORT
-
-import threading
-import json
 import os
 import speech_recognition as sr
+import importlib.util
 
-from view_image import WebImageViewer
 from key import DetectorPalabraClave
 from voice_text import TranscriptorAudio
 from services_ia import GeminiClient
@@ -29,94 +11,115 @@ from voice_output import RinVoz
 from sidebar import FloatingSidebar
 from services_imagenes import WikimediaSearcher
 from folder_opener import FolderOpener
-from modulo_executor import ModuloExecutor  # Importamos el nuevo motor
+from modulo_executor import ModuloExecutor
+from dynamic_module_generator import DynamicModuleGenerator
+from modules.system.CodeArchitect import CodeArchitect
 
 class AsistenteOrquestador:
-
     def __init__(self, sidebar_instance):
         self.sidebar = sidebar_instance
         self.centinela = DetectorPalabraClave(palabra_clave="rin", idioma="es-AR")
         self.transcriptor = TranscriptorAudio(idioma="es-AR")
         self.ia = GeminiClient("manifest_1.txt")
         self.motor_voz = RinVoz(forzar_local=False)
+        self.generator = DynamicModuleGenerator()
         
         self.reconocedor_orden = sr.Recognizer()
         self.reconocedor_orden.pause_threshold = 6.0
 
-        # Catálogo de módulos
+        # Catálogo centralizado
         self.catalogo_modulos = {
             "WikimediaSearcher": WikimediaSearcher,
-            "FolderOpener": FolderOpener
+            "FolderOpener": FolderOpener,
+            "CodeArchitect": CodeArchitect
         }
         
-        # Inicializamos el ejecutor universal
+        self._cargar_modulos_dinamicos()
         self.executor = ModuloExecutor(self.catalogo_modulos)
 
-    def capturar_orden(self):
-        with sr.Microphone(int(os.getenv("MIC_INDEX", 0))) as origen:
-            print("\n🔊 [Asistente]: Te escucho...")
-            self.reconocedor_orden.adjust_for_ambient_noise(origen, duration=0.5)
+    def _cargar_modulos_dinamicos(self):
+        registry_path = "./modules/dynamic/registry.json"
+        if not os.path.exists(registry_path): return
+
+        with open(registry_path, "r") as f:
             try:
-                return self.reconocedor_orden.listen(origen, timeout=5, phrase_time_limit=10)
-            except sr.WaitTimeoutError:
-                return None
+                registry = json.load(f)
+            except: return
+            
+        for nombre, info in registry.items():
+            try:
+                spec = importlib.util.spec_from_file_location(nombre, info["path"])
+                modulo = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(modulo)
+                if hasattr(modulo, nombre):
+                    self.catalogo_modulos[nombre] = getattr(modulo, nombre)
+                    print(f"✅ Módulo cargado: {nombre}")
+            except Exception as e:
+                print(f"❌ Error cargando {nombre}: {e}")
 
     def iniciar_bucle(self):
-        print("🚀 Orquestador iniciado correctamente.")
+        print("🚀 Orquestador iniciado correctamente. Modo iterativo activado.")
         while True:
-            # 1. Esperar palabra clave
             self.centinela.esperar_activacion()
+            audio = self.capturar_orden()
+            if not audio: continue
 
-            # 2. Capturar orden
-            audio_orden = self.capturar_orden()
-            if not audio_orden: continue
+            peticion_original = self.transcriptor.transcribir(audio)
+            if not peticion_original or peticion_original.startswith("["): continue
 
-            peticion_texto = self.transcriptor.transcribir(audio_orden)
-            if not peticion_texto or peticion_texto.startswith("["): continue
+            print(f"👤 [Usuario]: {peticion_original}")
+            
+            # --- BUCLE DE ITERACIÓN DE INTENTOS ---
+            contexto_error = ""
+            for intento in range(3):
+                # Incluimos el error en el prompt si es una iteración de reintento
+                prompt = f"{peticion_original} {contexto_error}"
+                respuesta_json = self.ia(prompt)
 
-            print(f"👤 [Usuario]: {peticion_texto}")
-            respuesta_json = self.ia(peticion_texto)
-
-            try:
-                datos_dict = json.loads(respuesta_json)
-            except:
-                datos_dict = {"leer": respuesta_json, "metodo": False, "imagen": None}
-
-            # 3. Motor de ejecución (Simplificado mediante el Executor)
-            ejecutar_modulo = datos_dict.get("ejecutar_modulo")
-            if isinstance(ejecutar_modulo, dict):
-                nombre_clase = ejecutar_modulo.get("clase")
-                argumentos = ejecutar_modulo.get("args", [])
-
-                if nombre_clase in self.catalogo_modulos:
-                    print(f"⚙️ [Orquestador]: Ejecutando módulo -> {nombre_clase}")
-                    # Delegamos la ejecución al motor, sin if/else internos
-                    resultado = self.executor.ejecutar_tarea(nombre_clase, argumentos)
-                    datos_dict.update(resultado)
-
-            # 4. Voz
-            self.motor_voz.procesar_y_hablar(respuesta_json)
-
-            # 5. Sidebar
-            self.sidebar.show(datos_dict)
-
-            # 6. Visualizador de imágenes
-            if datos_dict.get("imagen"):
                 try:
-                    WebImageViewer(datos_dict["imagen"])
-                except Exception as e:
-                    print(f"❌ Error al abrir visor: {e}")
+                    datos = json.loads(respuesta_json)
+                except:
+                    datos = {"leer": "No pude procesar la respuesta.", "ejecutar_modulo": None}
 
-# ==================================================
-# ARRANQUE DEL SISTEMA
-# ==================================================
+                # 1. AUTO-REGISTRO
+                if datos.get("nuevo_modulo"):
+                    m = datos["nuevo_modulo"]
+                    print(f"💾 Registrando nuevo módulo: {m.get('nombre')}")
+                    self.generator.registrar_modulo(m['nombre'], m['codigo'], m['metadata'])
+                    self._cargar_modulos_dinamicos()
+                    self.executor = ModuloExecutor(self.catalogo_modulos)
+                    
+                    if not datos.get("ejecutar_modulo"):
+                        datos["ejecutar_modulo"] = {"clase": m['nombre'], "args": []}
+                    del datos["nuevo_modulo"]
+
+                # 2. EJECUCIÓN CON VALIDACIÓN
+                ejecutar = datos.get("ejecutar_modulo")
+                if isinstance(ejecutar, dict) and ejecutar.get("clase") in self.catalogo_modulos:
+                    print(f"⚙️ [Intento {intento + 1}]: Ejecutando -> {ejecutar['clase']}")
+                    resultado = self.executor.ejecutar_tarea(ejecutar["clase"], ejecutar.get("args", []))
+                    
+                    if resultado.get("success"):
+                        print(f"✅ Éxito: {resultado.get('resultado')}")
+                        self.motor_voz.procesar_y_hablar(datos.get("leer", "Hecho."))
+                        self.sidebar.show(resultado)
+                        break # Salida exitosa del bucle for
+                    else:
+                        # Inyectamos el error para que la IA corrija en la siguiente iteración
+                        contexto_error = f" (Error previo: {resultado['error']}. Analízalo y reintenta la tarea corrigiendo la lógica o argumentos)."
+                        print(f"❌ Error detectado: {resultado['error']}. Reintentando...")
+                else:
+                    # Si no hay acción o es una respuesta informativa
+                    self.motor_voz.procesar_y_hablar(datos.get("leer", "Entendido."))
+                    break
+
+    def capturar_orden(self):
+        with sr.Microphone(int(os.getenv("MIC_INDEX", 0))) as o:
+            try: return self.reconocedor_orden.listen(o, timeout=5, phrase_time_limit=10)
+            except: return None
+
 if __name__ == "__main__":
     interfaz = FloatingSidebar()
-    asistente = AsistenteOrquestador(sidebar_instance=interfaz)
-    hilo_audio = threading.Thread(target=asistente.iniciar_bucle, daemon=True)
-    hilo_audio.start()
-
-    try:
-        interfaz.iniciar_interfaz()
-    except KeyboardInterrupt:
-        print("\n👋 Sistema cerrado correctamente.")
+    asistente = AsistenteOrquestador(interfaz)
+    threading.Thread(target=asistente.iniciar_bucle, daemon=True).start()
+    interfaz.iniciar_interfaz()
