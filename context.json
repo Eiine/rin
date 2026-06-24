@@ -1,0 +1,67 @@
+{
+  "usuario": {
+    "preferencias": "evitar tecnicismos",
+    "ubicacion": "Argentina"
+  },
+  "estado_actual": {
+    "carpeta_abierta": "proyectos",
+    "ultima_accion": "FolderManager.abrir",
+    "archivo_en_edicion": null
+  },
+  "memoria_reciente": [
+    {
+      "tarea": "FolderOpener: ['proyectos']",
+      "fecha": "2026-06-23T01:19:39.633162",
+      "resultado": "{'voz': 'He accedido a la carpeta solicitada.', 'ui_data': {'mostrar': True, 'info': 'Carpeta abierta', 'detalles_tecnicos': 'Carpeta encontrada: /home/miguel-notbock/proyectos'}}"
+    },
+    {
+      "tarea": "GeneralSearcher: ['historial de conversación', 'texto']",
+      "fecha": "2026-06-23T01:20:47.194983",
+      "resultado": "Búsqueda de texto iniciada para: historial de conversación"
+    },
+    {
+      "tarea": "GeneralSearcher: ['Goku', 'imagenes']",
+      "fecha": "2026-06-23T01:21:51.441966",
+      "resultado": "Búsqueda de imagenes iniciada para: Goku"
+    },
+    {
+      "tarea": "BrowserPlayer: ['tango']",
+      "fecha": "2026-06-23T01:22:31.754760",
+      "resultado": "Reproduciendo: tango"
+    },
+    {
+      "tarea": "ProcessManager: ['firefox']",
+      "fecha": "2026-06-23T01:24:38.009368",
+      "resultado": "He cerrado el programa. Procesos terminados (PID): 7139, 10435, 15026, 17638"
+    },
+    {
+      "tarea": "BrowserPlayer: ['lista']",
+      "fecha": "2026-06-23T01:49:26.146874",
+      "resultado": "Reproduciendo: lista"
+    },
+    {
+      "tarea": "BrowserPlayer: ['por mis pequeñas']",
+      "fecha": "2026-06-23T01:51:00.808551",
+      "resultado": "Error crítico al ejecutar BrowserPlayer: Message: Process unexpectedly closed with status 0\n"
+    },
+    {
+      "tarea": "ProcessManager: ['firefox']",
+      "fecha": "2026-06-23T01:52:58.875909",
+      "resultado": "He cerrado el programa. Procesos terminados (PID): 7139, 10435, 15026, 20133"
+    },
+    {
+      "tarea": "ProcessManager: ['firefox']",
+      "fecha": "2026-06-23T01:53:21.858758",
+      "resultado": "He cerrado el programa. Procesos terminados (PID): 7139, 10435, 15026, 20133"
+    },
+    {
+      "tarea": "ProcessManager: ['terminal']",
+      "fecha": "2026-06-23T01:53:38.375918",
+      "resultado": "He cerrado el programa. Procesos terminados (PID): 19892"
+    }
+  ],
+  "temas_en_curso": [
+    "desarrollo de asistente Rin",
+    "pruebas de carpetas"
+  ]
+}

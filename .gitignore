@@ -1,2 +1,4 @@
+/drivers
 .env
 venv
+media/

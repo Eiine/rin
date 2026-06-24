@@ -1,27 +1,28 @@
-# modulo_executor.py
-
 class ModuloExecutor:
     def __init__(self, catalogo):
         self.catalogo = catalogo
 
     def ejecutar_tarea(self, nombre_clase, argumentos):
+        """
+        Ejecuta de forma estandarizada los módulos.
+        REGLA: Todos los módulos DEBEN implementar el método .ejecutar(*args).
+        """
         if nombre_clase not in self.catalogo:
-            return {"success": False, "error": f"Módulo {nombre_clase} no encontrado"}
+            return {"success": False, "error": f"Módulo {nombre_clase} no registrado."}
 
         try:
+            # Instanciamos el módulo desde el catálogo
             instancia = self.catalogo[nombre_clase]()
             
-            # Intentamos ejecutar según el patrón de diseño del módulo
+            # Ejecución estandarizada
             if hasattr(instancia, "ejecutar"):
-                res = instancia.ejecutar(*argumentos)
-            elif hasattr(instancia, "abrir"):
-                res = instancia.abrir(argumentos[0])
-            elif hasattr(instancia, "ejecutar_busqueda"):
-                res = instancia.ejecutar_busqueda(argumentos[0])
+                resultado = instancia.ejecutar(*argumentos)
+                return {"success": True, "resultado": resultado}
             else:
-                return {"success": False, "error": f"Módulo {nombre_clase} sin método ejecutable"}
+                return {
+                    "success": False, 
+                    "error": f"El módulo {nombre_clase} no cumple con la interfaz: falta el método .ejecutar()"
+                }
                 
-            return {"success": True, "resultado": res}
-        
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": f"Error crítico al ejecutar {nombre_clase}: {str(e)}"}

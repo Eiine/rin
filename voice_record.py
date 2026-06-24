@@ -1,125 +1,131 @@
+# -*- coding: utf-8 -*-
 import threading
 import json
 import os
+import hashlib
 import speech_recognition as sr
-import importlib.util
+import traceback
 
+# Módulos locales
+from modules.VisionCapture import VisionCapture
 from key import DetectorPalabraClave
 from voice_text import TranscriptorAudio
 from services_ia import GeminiClient
 from voice_output import RinVoz
 from sidebar import FloatingSidebar
-from services_imagenes import WikimediaSearcher
-from folder_opener import FolderOpener
 from modulo_executor import ModuloExecutor
-from dynamic_module_generator import DynamicModuleGenerator
-from modules.system.CodeArchitect import CodeArchitect
+from modules.ContextManager import ContextManager
+from modules.browser_player import BrowserPlayer
+from modules.process_manager import ProcessManager
+from modules.app_launcher import AppLauncher
+from modules.GeneralSearcher import GeneralSearcher
+from modules.FolderOpener import FolderOpener
 
 class AsistenteOrquestador:
     def __init__(self, sidebar_instance):
         self.sidebar = sidebar_instance
         self.centinela = DetectorPalabraClave(palabra_clave="rin", idioma="es-AR")
+        self.centinela.variantes = ["rin", "ren", "ran", "ron", "ryn", "rein", "in", "ri", "ir", "inn", "rinn", "rina", "rin-rin", "rins", "lin", "din", "tin", "gin", "reyn", "reen"]
         self.transcriptor = TranscriptorAudio(idioma="es-AR")
         self.ia = GeminiClient("manifest_1.txt")
         self.motor_voz = RinVoz(forzar_local=False)
-        self.generator = DynamicModuleGenerator()
+        self.contexto = ContextManager()
         
+        self.media_path = "media"
+        if not os.path.exists(self.media_path):
+            os.makedirs(self.media_path)
+            
         self.reconocedor_orden = sr.Recognizer()
-        self.reconocedor_orden.pause_threshold = 6.0
-
-        # Catálogo centralizado
         self.catalogo_modulos = {
-            "WikimediaSearcher": WikimediaSearcher,
+            "BrowserPlayer": BrowserPlayer,
+            "ProcessManager": ProcessManager,
+            "AppLauncher": AppLauncher,
+            "GeneralSearcher": GeneralSearcher,
             "FolderOpener": FolderOpener,
-            "CodeArchitect": CodeArchitect
+            "VisionCapture": VisionCapture
         }
-        
-        self._cargar_modulos_dinamicos()
         self.executor = ModuloExecutor(self.catalogo_modulos)
 
-    def _cargar_modulos_dinamicos(self):
-        registry_path = "./modules/dynamic/registry.json"
-        if not os.path.exists(registry_path): return
-
-        with open(registry_path, "r") as f:
-            try:
-                registry = json.load(f)
-            except: return
-            
-        for nombre, info in registry.items():
-            try:
-                spec = importlib.util.spec_from_file_location(nombre, info["path"])
-                modulo = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(modulo)
-                if hasattr(modulo, nombre):
-                    self.catalogo_modulos[nombre] = getattr(modulo, nombre)
-                    print(f"✅ Módulo cargado: {nombre}")
-            except Exception as e:
-                print(f"❌ Error cargando {nombre}: {e}")
-
-    def iniciar_bucle(self):
-        print("🚀 Orquestador iniciado correctamente. Modo iterativo activado.")
-        while True:
-            self.centinela.esperar_activacion()
-            audio = self.capturar_orden()
-            if not audio: continue
-
-            peticion_original = self.transcriptor.transcribir(audio)
-            if not peticion_original or peticion_original.startswith("["): continue
-
-            print(f"👤 [Usuario]: {peticion_original}")
-            
-            # --- BUCLE DE ITERACIÓN DE INTENTOS ---
-            contexto_error = ""
-            for intento in range(3):
-                # Incluimos el error en el prompt si es una iteración de reintento
-                prompt = f"{peticion_original} {contexto_error}"
-                respuesta_json = self.ia(prompt)
-
-                try:
-                    datos = json.loads(respuesta_json)
-                except:
-                    datos = {"leer": "No pude procesar la respuesta.", "ejecutar_modulo": None}
-
-                # 1. AUTO-REGISTRO
-                if datos.get("nuevo_modulo"):
-                    m = datos["nuevo_modulo"]
-                    print(f"💾 Registrando nuevo módulo: {m.get('nombre')}")
-                    self.generator.registrar_modulo(m['nombre'], m['codigo'], m['metadata'])
-                    self._cargar_modulos_dinamicos()
-                    self.executor = ModuloExecutor(self.catalogo_modulos)
-                    
-                    if not datos.get("ejecutar_modulo"):
-                        datos["ejecutar_modulo"] = {"clase": m['nombre'], "args": []}
-                    del datos["nuevo_modulo"]
-
-                # 2. EJECUCIÓN CON VALIDACIÓN
-                ejecutar = datos.get("ejecutar_modulo")
-                if isinstance(ejecutar, dict) and ejecutar.get("clase") in self.catalogo_modulos:
-                    print(f"⚙️ [Intento {intento + 1}]: Ejecutando -> {ejecutar['clase']}")
-                    resultado = self.executor.ejecutar_tarea(ejecutar["clase"], ejecutar.get("args", []))
-                    
-                    if resultado.get("success"):
-                        print(f"✅ Éxito: {resultado.get('resultado')}")
-                        self.motor_voz.procesar_y_hablar(datos.get("leer", "Hecho."))
-                        self.sidebar.show(resultado)
-                        break # Salida exitosa del bucle for
-                    else:
-                        # Inyectamos el error para que la IA corrija en la siguiente iteración
-                        contexto_error = f" (Error previo: {resultado['error']}. Analízalo y reintenta la tarea corrigiendo la lógica o argumentos)."
-                        print(f"❌ Error detectado: {resultado['error']}. Reintentando...")
-                else:
-                    # Si no hay acción o es una respuesta informativa
-                    self.motor_voz.procesar_y_hablar(datos.get("leer", "Entendido."))
-                    break
+    def obtener_audio_cached(self, texto):
+        hash_texto = hashlib.md5(texto.encode()).hexdigest()
+        archivo_audio = os.path.join(self.media_path, f"{hash_texto}.mp3")
+        self.motor_voz.guardar_y_reproducir(texto, archivo_audio)
 
     def capturar_orden(self):
-        with sr.Microphone(int(os.getenv("MIC_INDEX", 0))) as o:
-            try: return self.reconocedor_orden.listen(o, timeout=5, phrase_time_limit=10)
-            except: return None
+        with sr.Microphone() as o:
+            try:
+                return self.reconocedor_orden.listen(o, timeout=15, phrase_time_limit=15)
+            except Exception as e:
+                print(f"Error al capturar audio: {e}")
+                return None
+
+    def iniciar_bucle(self):
+        print("🚀 Orquestador Rin operativo y escuchando...")
+        while True:
+            try:
+                self.centinela.esperar_activacion()
+                self.obtener_audio_cached("A la orden, jefe.")
+                
+                audio = self.capturar_orden()
+                if not audio: continue
+                
+                peticion = self.transcriptor.transcribir(audio)
+                if not peticion: continue
+                print(f"👤 [Usuario]: {peticion}")
+
+                estado_actual = self.contexto.leer_contexto()
+                prompt_full = f"Contexto actual: {json.dumps(estado_actual)}\nUsuario dice: {peticion}"
+                
+                # Primera llamada a la IA para decidir qué hacer
+                respuesta_bruta = self.ia(prompt_full)
+                respuesta_limpia = respuesta_bruta.replace('```json', '').replace('```', '').strip()
+                datos = json.loads(respuesta_limpia)
+                
+                ejecutar = datos.get("ejecutar_modulo")
+                resultado_tecnico = "Sin acciones."
+                ruta_imagen = None 
+                
+                # Ejecución de Módulos
+                if isinstance(ejecutar, dict):
+                    res = self.executor.ejecutar_tarea(ejecutar["clase"], ejecutar.get("args", []))
+                    
+                    if res.get("success"):
+                        resultado_tecnico = str(res.get("resultado"))
+                        # Si es el módulo de visión, capturamos la ruta para procesarla
+                        if ejecutar["clase"] == "VisionCapture":
+                            ruta_imagen = "temp_vision.png"
+                    else:
+                        resultado_tecnico = str(res.get("error"))
+                    
+                    self.contexto.registrar_accion(f"{ejecutar['clase']}: {ejecutar['args']}", resultado_tecnico)
+
+                # Si el módulo de visión capturó algo, re-enviamos a la IA con la imagen
+                if ruta_imagen and os.path.exists(ruta_imagen):
+                    prompt_vision = f"Basado en esta captura, responde a la petición del usuario: {peticion}"
+                    respuesta_bruta = self.ia(prompt_vision, ruta_imagen=ruta_imagen)
+                    respuesta_limpia = respuesta_bruta.replace('```json', '').replace('```', '').strip()
+                    datos = json.loads(respuesta_limpia)
+                    os.remove(ruta_imagen) # Limpieza
+
+                # Actualizar UI y Voz
+                ui_info = datos.get("ui_data", {})
+                if ui_info.get("mostrar"):
+                    ui_info["detalles_tecnicos"] = resultado_tecnico
+                    self.sidebar.show(ui_info)
+                
+                self.obtener_audio_cached(datos.get("voz", "Entendido."))
+                
+            except Exception as e:
+                print(f"⚠️ Error en el flujo del orquestador: {e}")
+                traceback.print_exc()
 
 if __name__ == "__main__":
-    interfaz = FloatingSidebar()
-    asistente = AsistenteOrquestador(interfaz)
-    threading.Thread(target=asistente.iniciar_bucle, daemon=True).start()
-    interfaz.iniciar_interfaz()
+    try:
+        interfaz = FloatingSidebar()
+        asistente = AsistenteOrquestador(interfaz)
+        hilo = threading.Thread(target=asistente.iniciar_bucle, daemon=True)
+        hilo.start()
+        interfaz.iniciar_interfaz()
+    except Exception as e:
+        print(f"CRITICAL ERROR AL INICIAR: {e}")
+        traceback.print_exc()

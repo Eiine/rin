@@ -1,32 +1,26 @@
 import subprocess
 import shlex
+import os
 
-def rin_hablar_local(texto: str, velocidad: int = 145):
-    """
-    Hace que Rin hable utilizando el binario de espeak del sistema operativo
-    de forma directa y portable a través de un subproceso de Python.
-    """
-    print(f"🎙️ Rin (Local) dice: '{texto}'")
-    
-    # Preparamos los parámetros del comando exactamente como te funcionó en la terminal:
-    # -v es: idioma español
-    # -s: velocidad de habla (words per minute, 145 es ideal)
-    comando = f'espeak -v es -s {velocidad} "{texto}"'
-    
-    try:
-        # shlex.split divide el string de forma segura para evitar problemas con las comillas
-        argumentos = shlex.split(comando)
-        
-        # Ejecuta el comando en el sistema operativo de forma síncrona
-        # (bloquea el script de Python hasta que termina de hablar, igual que runAndWait)
-        subprocess.run(argumentos, check=True)
-        print("✅ Flujo de audio completado de forma local.")
-        
-    except FileNotFoundError:
-        print("❌ Error: No se encontró 'espeak' instalado en este sistema operativo.")
-    except Exception as e:
-        print(f"❌ Ocurrió un error inesperado al reproducir el audio: {e}")
+class RinVoz:
+    def __init__(self, forzar_local=False):
+        self.forzar_local = forzar_local
 
-if __name__ == "__main__":
-    frase_prueba = "Hola, soy Rin, un asistente cognitivo que está siendo desarrollado por Miguel."
-    rin_hablar_local(frase_prueba)
+    def procesar_y_hablar(self, texto: str, velocidad: int = 145):
+        """Tu método original para hablar al vuelo."""
+        print(f"🎙️ Rin (Local) dice: '{texto}'")
+        comando = f'espeak -v es -s {velocidad} "{texto}"'
+        subprocess.run(shlex.split(comando), check=True)
+
+    def guardar_y_reproducir(self, texto: str, ruta_archivo: str, velocidad: int = 145):
+        """Genera el audio, lo guarda y lo reproduce."""
+        # -w guarda el audio en formato .wav
+        comando = f'espeak -v es -s {velocidad} -w "{ruta_archivo}" "{texto}"'
+        subprocess.run(shlex.split(comando), check=True)
+        self.reproducir_archivo(ruta_archivo)
+
+    def reproducir_archivo(self, ruta_archivo: str):
+        """Reproduce un archivo .wav guardado."""
+        # Usamos 'aplay' (típico de sistemas Linux/ALSA) para reproducir el archivo
+        # Es mucho más eficiente que regenerar el audio
+        subprocess.run(["aplay", "-q", ruta_archivo])
